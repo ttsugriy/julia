@@ -177,8 +177,17 @@ end
     a[i] = 0 # may throw
 end |> !Core.Compiler.is_nothrow
 
-# SimpleVector allocation can be consistent
+# SimpleVector allocation is consistent
 @test Core.Compiler.is_consistent(Base.infer_effects(Core.svec))
 @test Base.infer_effects() do
     Core.svec(nothing, 1, "foo")
+end |> Core.Compiler.is_consistent
+
+# `getfield_effects` handles access to union object nicely
+@test Core.Compiler.is_consistent(Core.Compiler.getfield_effects(Any[Some{String}, Core.Const(:value)], String))
+@test Core.Compiler.is_consistent(Core.Compiler.getfield_effects(Any[Some{Symbol}, Core.Const(:value)], Symbol))
+@test Core.Compiler.is_consistent(Core.Compiler.getfield_effects(Any[Union{Some{Symbol},Some{String}}, Core.Const(:value)], Union{Symbol,String}))
+@test Base.infer_effects((Bool,)) do c
+    obj = c ? Some{String}("foo") : Some{Symbol}(:bar)
+    return getfield(obj, :value)
 end |> Core.Compiler.is_consistent
