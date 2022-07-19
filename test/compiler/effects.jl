@@ -212,6 +212,50 @@ end |> !Core.Compiler.is_noglobal
     constant_mutable_global[] = v
 end |> !Core.Compiler.is_noglobal
 
+# tries to prove consistency of frames including `getfield` to mutable object using the :noglobal effect
+
+mutable struct SafeRef{T}
+    x::T
+end
+Base.getindex(x::SafeRef) = x.x;
+Base.setindex!(x::SafeRef, v) = x.x = v;
+Base.isassigned(x::SafeRef) = true;
+
+function mutable_consistent(s)
+    SafeRef(s)[]
+end
+@test Core.Compiler.is_noglobal(Base.infer_effects(mutable_consistent, (Symbol,)))
+@test fully_eliminated(; retval=QuoteNode(:foo)) do
+    mutable_consistent(:foo)
+end
+
+function nested_mutable_consistent(s)
+    SafeRef(SafeRef(SafeRef(SafeRef(SafeRef(s)))))[][][][][]
+end
+@test Core.Compiler.is_noglobal(Base.infer_effects(nested_mutable_consistent, (Symbol,)))
+@test fully_eliminated(; retval=QuoteNode(:foo)) do
+    nested_mutable_consistent(:foo)
+end
+
+const consistent_global = Some(:foo)
+@test Base.infer_effects() do
+    consistent_global.value
+end |> Core.Compiler.is_consistent
+
+const inconsistent_global = SafeRef(:foo)
+@test Base.infer_effects() do
+    inconsistent_global[]
+end |> !Core.Compiler.is_consistent
+
+global inconsistent_condition_ref = Ref{Bool}(false)
+@test Base.infer_effects() do
+    if inconsistent_condition_ref[]
+        return 0
+    else
+        return 1
+    end
+end |> !Core.Compiler.is_consistent
+
 # `getfield_effects` handles access to union object nicely
 @test Core.Compiler.is_consistent(Core.Compiler.getfield_effects(Any[Some{String}, Core.Const(:value)], String))
 @test Core.Compiler.is_consistent(Core.Compiler.getfield_effects(Any[Some{Symbol}, Core.Const(:value)], Symbol))

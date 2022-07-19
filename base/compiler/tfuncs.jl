@@ -1839,7 +1839,7 @@ function getfield_effects(argtypes::Vector{Any}, @nospecialize(rt))
     isempty(argtypes) && return EFFECTS_THROWS
     obj = argtypes[1]
     isvarargtype(obj) && return Effects(EFFECTS_THROWS; consistent=ALWAYS_FALSE)
-    consistent = is_immutable_argtype(obj) ? ALWAYS_TRUE : ALWAYS_FALSE
+    consistent = is_immutable_argtype(obj) ? ALWAYS_TRUE : CONSISTENT_IF_NOGLOBAL
     noglobal = ALWAYS_TRUE
     if hasintersect(widenconst(obj), Module)
         noglobal = getglobal_effects(argtypes, rt).noglobal
