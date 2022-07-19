@@ -1796,6 +1796,30 @@ const _CONSISTENT_BUILTINS = Any[
     throw
 ]
 
+const _NOGLOBAL_BUILTINS = Any[
+    (<:),
+    (===),
+    apply_type,
+    arrayref,
+    arrayset,
+    arraysize,
+    Core.ifelse,
+    sizeof,
+    svec,
+    fieldtype,
+    isa,
+    isdefined,
+    modifyfield!,
+    nfields,
+    replacefield!,
+    setfield!,
+    swapfield!,
+    throw,
+    tuple,
+    typeassert,
+    typeof
+]
+
 const _SPECIAL_BUILTINS = Any[
     Core._apply_iterate
 ]
@@ -1816,6 +1840,10 @@ function getfield_effects(argtypes::Vector{Any}, @nospecialize(rt))
     obj = argtypes[1]
     isvarargtype(obj) && return Effects(EFFECTS_THROWS; consistent=ALWAYS_FALSE)
     consistent = is_immutable_argtype(obj) ? ALWAYS_TRUE : ALWAYS_FALSE
+    noglobal = ALWAYS_TRUE
+    if hasintersect(widenconst(obj), Module)
+        noglobal = getglobal_effects(argtypes, rt).noglobal
+    end
     if getfield_boundscheck(argtypes) !== true
         # If we cannot independently prove inboundsness, taint consistency.
         # The inbounds-ness assertion requires dynamic reachability, while
@@ -1830,21 +1858,25 @@ function getfield_effects(argtypes::Vector{Any}, @nospecialize(rt))
     else
         nothrow = getfield_nothrow(argtypes) ? ALWAYS_TRUE : ALWAYS_FALSE
     end
-    return Effects(EFFECTS_TOTAL; consistent, nothrow)
+    return Effects(EFFECTS_TOTAL; consistent, nothrow, noglobal)
 end
 
 function getglobal_effects(argtypes::Vector{Any}, @nospecialize(rt))
-    consistent = nothrow = ALWAYS_FALSE
+    consistent = nothrow = noglobal = ALWAYS_FALSE
     if getglobal_nothrow(argtypes)
         # typeasserts below are already checked in `getglobal_nothrow`
         M, s = (argtypes[1]::Const).val::Module, (argtypes[2]::Const).val::Symbol
         if isconst(M, s)
-            consistent = nothrow = ALWAYS_TRUE
+            if is_effect_free_argtype(rt)
+                consistent = nothrow = noglobal = ALWAYS_TRUE
+            else
+                consistent = nothrow = ALWAYS_TRUE
+            end
         else
             nothrow = ALWAYS_TRUE
         end
     end
-    return Effects(EFFECTS_TOTAL; consistent, nothrow)
+    return Effects(EFFECTS_TOTAL; consistent, nothrow, noglobal)
 end
 
 function builtin_effects(f::Builtin, argtypes::Vector{Any}, @nospecialize(rt))
@@ -1866,7 +1898,8 @@ function builtin_effects(f::Builtin, argtypes::Vector{Any}, @nospecialize(rt))
             ALWAYS_TRUE : ALWAYS_FALSE
         nothrow = (!(!isempty(argtypes) && isvarargtype(argtypes[end])) && builtin_nothrow(f, argtypes, rt)) ?
             ALWAYS_TRUE : ALWAYS_FALSE
-        return Effects(EFFECTS_TOTAL; consistent, effect_free, nothrow)
+        noglobal = contains_is(_NOGLOBAL_BUILTINS, f) ? ALWAYS_TRUE : ALWAYS_FALSE
+        return Effects(EFFECTS_TOTAL; consistent, effect_free, nothrow, noglobal)
     end
 end
 
