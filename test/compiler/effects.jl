@@ -183,6 +183,35 @@ end |> !Core.Compiler.is_nothrow
     Core.svec(nothing, 1, "foo")
 end |> Core.Compiler.is_consistent
 
+# :noglobal effect
+const global constant_global::Int = 42
+global nonconstant_global::Int = 42
+const global constant_mutable_global = Ref(0)
+@test Base.infer_effects() do
+    constant_global
+end |> Core.Compiler.is_noglobal
+@test Base.infer_effects() do
+    getglobal(@__MODULE__, :constant_global)
+end |> Core.Compiler.is_noglobal
+@test Base.infer_effects() do
+    nonconstant_global
+end |> !Core.Compiler.is_noglobal
+@test Base.infer_effects() do
+    getglobal(@__MODULE__, :nonconstant_global)
+end |> !Core.Compiler.is_noglobal
+@test Base.infer_effects((Symbol,)) do name
+    getglobal(@__MODULE__, name)
+end |> !Core.Compiler.is_noglobal
+@test Base.infer_effects((Int,)) do v
+    global nonconstant_global = v
+end |> !Core.Compiler.is_noglobal
+@test Base.infer_effects((Int,)) do v
+    setglobal!(@__MODULE__, :nonconstant_global, v)
+end |> !Core.Compiler.is_noglobal
+@test Base.infer_effects((Int,)) do v
+    constant_mutable_global[] = v
+end |> !Core.Compiler.is_noglobal
+
 # `getfield_effects` handles access to union object nicely
 @test Core.Compiler.is_consistent(Core.Compiler.getfield_effects(Any[Some{String}, Core.Const(:value)], String))
 @test Core.Compiler.is_consistent(Core.Compiler.getfield_effects(Any[Some{Symbol}, Core.Const(:value)], Symbol))
